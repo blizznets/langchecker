@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Map;
 import static com.zz.langchecker.Characters.*;
 
-// TODO check char types carefully (mixed lang case)
 public final class LangSwitcherTokenizer implements Tokenizer {
   private static final Joiner JOINER = Joiner.on("");
 
@@ -66,17 +65,21 @@ public final class LangSwitcherTokenizer implements Tokenizer {
 
   @Override
   public TokenizerResponse tokenize(String input) {
-    List<Token> allTokens = split(input);
+    List<Integer> uppercasePositions = uppercasePositions(input);
+    String canonical = canonical(input);
+    List<Token> allTokens = split(canonical);
     List<String> wordTokens = FluentIterable.from(allTokens)
         .filter(TokenFunctions.isWord())
         .transform(TokenFunctions.corrected())
         .toList();
-    String corrected = JOINER.join(Lists.transform(allTokens, TokenFunctions.corrected()));
+    String corrected = restoreUppercase(
+        JOINER.join(Lists.transform(allTokens, TokenFunctions.corrected())),
+        uppercasePositions);
 
     return ImmutableTokenizerResponse.builder()
         .original(input)
         .addAllTokens(wordTokens)
-        .corrected(corrected.equals(canonical(input))
+        .corrected(corrected.equals(canonical)
             ? Optional.<String>absent()
             : Optional.of(corrected))
         .build();
@@ -84,13 +87,13 @@ public final class LangSwitcherTokenizer implements Tokenizer {
 
   List<Token> split(String input) {
     List<Token> tokens = Lists.newArrayList();
-    for (Token token : splitBySpecificSeparators(input, isSeparator())) {
+    for (Token token : splitBySpecificSeparators(input, isSeparator(), true)) {
       tokens.addAll(splitPossibleSubTokens(token));
     }
     return ImmutableList.copyOf(tokens);
   }
 
-  List<Token> splitBySpecificSeparators(String original, Predicate<Character> isSeparator) {
+  List<Token> splitBySpecificSeparators(String original, Predicate<Character> isSeparator, boolean useExceptions) {
     if (original.isEmpty()) {
       return ImmutableList.of();
     }
@@ -99,6 +102,7 @@ public final class LangSwitcherTokenizer implements Tokenizer {
 
     char[] chars = original.toCharArray();
     boolean isPrevSeparator = false;
+    boolean isPrevDigit = false;
     int start = 0;
     CharType.Set charTypes = CharType.createSet();
 
@@ -106,82 +110,99 @@ public final class LangSwitcherTokenizer implements Tokenizer {
       char ch = chars[i];
 
       boolean isCurrentSeparator = isSeparator.apply(ch);
+      boolean isCurrentDigit = Character.isDigit(ch);
 
-      if (i > 0 && isCurrentSeparator ^ isPrevSeparator) {
+      if (i > 0 && (isCurrentSeparator ^ isPrevSeparator || isCurrentDigit ^ isPrevDigit)) {
         String token = original.substring(start, i);
-        tokens.add(buildToken(TokenType.of(isPrevSeparator), token, token, token, charTypes));
+        tokens.add(buildToken(TokenType.of(isPrevSeparator), token, token, token, charTypes, useExceptions));
 
         start = i;
         charTypes = CharType.createSet();
       }
 
       isPrevSeparator = isCurrentSeparator;
+      isPrevDigit = isCurrentDigit;
       charTypes.add(CharType.of(Character.toLowerCase(ch)));
     }
 
     String token = original.substring(start);
-    tokens.add(buildToken(TokenType.of(isPrevSeparator), token, token, token, charTypes));
+    tokens.add(buildToken(TokenType.of(isPrevSeparator), token, token, token, charTypes, useExceptions));
 
     return ImmutableList.copyOf(tokens);
   }
 
   List<Token> splitPossibleSubTokens(Token token) {
-    String candidate = token.corrected();
-    String canonical = token.canonical();
     CharType.Set charTypes = token.charTypes();
-    TokenType tokenType = token.type();
-
-    // check different lang groups
 
     if (charTypes.containsOnly(CharType.EN_OR_POSSIBLE_RU)) {
-      String corrected = canonical;
-      if (!langChecker.check(Lang.EN, canonical)) {
-        String switched = Characters.switchLang(canonical, Lang.RU);
-        if (langChecker.check(Lang.RU, switched)) {
-          corrected = switched;
-        }
-      }
-      return ImmutableList.of(buildToken(tokenType, candidate, canonical, corrected));
+      return enOrPossibleRu(token);
     }
 
     if (charTypes.containsOnlyFirstOrBoth(CharType.SEPARATOR_OR_POSSIBLE_RU, CharType.EN_OR_POSSIBLE_RU)) {
-      String switched = Characters.switchLang(canonical, Lang.RU);
-      if (langChecker.check(Lang.RU, switched)) {
-        return ImmutableList.of(buildToken(tokenType, candidate, canonical, switched));
-      } else {
-        return splitBySpecificSeparators(canonical, isSeparatorOrPossibleRu());
-      }
+      return separatorOrPossibleEn(token);
     }
 
     if (charTypes.containsOnly(CharType.RU_OR_POSSIBLE_EN)) {
-      String corrected = canonical;
-      if (!langChecker.check(Lang.RU, canonical)) {
-        String switched = Characters.switchLang(canonical, Lang.EN);
-        if (langChecker.check(Lang.EN, switched)) {
-          corrected = switched;
-        }
-      }
-      return ImmutableList.of(buildToken(tokenType, candidate, canonical, corrected));
+      return ruOrPossibleEn(token);
     }
 
     if (charTypes.containsOnlyFirstOrBoth(CharType.RU_OR_POSSIBLE_SEPARATOR, CharType.RU_OR_POSSIBLE_EN)) {
-      boolean correct = langChecker.check(Lang.RU, canonical);
-      List<Token> splitByPossibleSeparators = ImmutableList.of();
-
-      if (!correct) {
-        splitByPossibleSeparators =
-            splitBySpecificSeparators(Characters.switchLang(canonical, Lang.EN), isSeparatorOrPossibleRu());
-        correct = !checkAll(splitByPossibleSeparators, Lang.EN);
-      }
-
-      if (correct) {
-        return ImmutableList.of(buildToken(tokenType, candidate, canonical, canonical));
-      } else if (!splitByPossibleSeparators.isEmpty()) {
-        return splitByPossibleSeparators;
-      }
+      return ruOrPossibleSeparator(token);
     }
 
     return ImmutableList.of(token);
+  }
+
+  private List<Token> enOrPossibleRu(Token token) {
+    String corrected = token.canonical();
+    if (!langChecker.check(Lang.EN, token.canonical())) {
+      String switched = Characters.switchLang(token.canonical(), Lang.RU);
+      if (langChecker.check(Lang.RU, switched)) {
+        corrected = switched;
+      }
+    }
+    return ImmutableList.of(buildToken(token.type(), token.corrected(), token.canonical(), corrected));
+  }
+
+  private List<Token> separatorOrPossibleEn(Token token) {
+    if (isAbbreviation(token.canonical())) {
+      return splitBySpecificSeparators(token.canonical(), isSeparatorOrPossibleRu(), false);
+    } else {
+      String switched = Characters.switchLang(token.canonical(), Lang.RU);
+      if (langChecker.check(Lang.RU, switched)) {
+        return ImmutableList.of(buildToken(token.type(), token.corrected(), token.canonical(), switched));
+      } else {
+        return splitBySpecificSeparators(token.canonical(), isSeparatorOrPossibleRu(), true);
+      }
+    }
+  }
+
+  private List<Token> ruOrPossibleEn(Token token) {
+    String corrected = token.canonical();
+    if (!langChecker.check(Lang.RU, token.canonical())) {
+      String switched = Characters.switchLang(token.canonical(), Lang.EN);
+      if (langChecker.check(Lang.EN, switched)) {
+        corrected = switched;
+      }
+    }
+    return ImmutableList.of(buildToken(token.type(), token.corrected(), token.canonical(), corrected));
+  }
+
+  private List<Token> ruOrPossibleSeparator(Token token) {
+    boolean correct = langChecker.check(Lang.RU, token.canonical());
+    List<Token> splitByPossibleSeparators = ImmutableList.of();
+
+    if (!correct) {
+      splitByPossibleSeparators =
+          splitBySpecificSeparators(Characters.switchLang(token.canonical(), Lang.EN), isSeparatorOrPossibleRu(), true);
+      correct = !checkAll(splitByPossibleSeparators, Lang.EN);
+    }
+
+    if (correct) {
+      return ImmutableList.of(buildToken(token.type(), token.corrected(), token.canonical(), token.canonical()));
+    } else {
+      return splitByPossibleSeparators;
+    }
   }
 
   private String canonical(String candidate) {
@@ -204,12 +225,24 @@ public final class LangSwitcherTokenizer implements Tokenizer {
       String canonical,
       String corrected,
       CharType.Set charTypes) {
+    return buildToken(tokenType, original, canonical, corrected, charTypes, true);
+  }
+
+  private Token buildToken(
+      TokenType tokenType,
+      String original,
+      String canonical,
+      String corrected,
+      CharType.Set charTypes,
+      boolean useException) {
 
     return ImmutableToken.builder()
         .type(tokenType)
         .original(original)
         .canonical(canonical)
-        .corrected(Objects.firstNonNull(exceptions.get(canonical), corrected))
+        .corrected(useException
+            ? Objects.firstNonNull(exceptions.get(canonical), corrected)
+            : corrected)
         .charTypes(charTypes)
         .build();
   }
@@ -238,12 +271,5 @@ public final class LangSwitcherTokenizer implements Tokenizer {
     public Map<String, String> getResult() {
       return builder.build();
     }
-  }
-
-  public static void main(String[] args) {
-    Tokenizer tokenizer = LangSwitcherTokenizer.create();
-
-    System.out.println(tokenizer.tokenize("eckeuf"));
-    System.out.println();
   }
 }

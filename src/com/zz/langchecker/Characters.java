@@ -20,8 +20,11 @@ package com.zz.langchecker;
 
 import com.google.common.base.Function;
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import com.google.common.primitives.Chars;
+import java.util.List;
 import java.util.Map;
 
 final class Characters {
@@ -45,7 +48,6 @@ final class Characters {
 
   // 0
   private static final char[] SEPARATORS = {
-      '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
       ' ', '\t', '\r', '\n', '!', '?', '_', '=', '-', '+', '*', '/', '|', '\\', '@', '#', '$', '%', '^', '&', '(', ')'};
 
   // 1
@@ -66,16 +68,18 @@ final class Characters {
   private static final char[] RU_OR_POSSIBLE_SEPARATOR = {
       'б', 'ё', 'ж', 'х', 'ъ', 'э', 'ю'};
 
+  private static final char[] POSSIBLE_RU_IN_UPPERCASE = {'<', '~', ':', '{', '}', '"', '>'};
+
   private static final Map<Character, Character> SWITCH_RU_FROM_EN; static {
     SWITCH_RU_FROM_EN = ImmutableMap.<Character, Character>builder()
         .put('f', 'а')
-        .put('<', 'б').put(',', 'б')
+        .put(',', 'б').put('<', 'б')
         .put('d', 'в')
         .put('u', 'г')
         .put('l', 'д')
         .put('t', 'е')
-        .put('~', 'ё').put('`', 'ё')
-        .put(':', 'ж').put(';', 'ж')
+        .put('`', 'ё').put('~', 'ё')
+        .put(';', 'ж').put(':', 'ж')
         .put('p', 'з')
         .put('b', 'и')
         .put('q', 'й')
@@ -90,16 +94,16 @@ final class Characters {
         .put('n', 'т')
         .put('e', 'у')
         .put('a', 'ф')
-        .put('{', 'х').put('[', 'х')
+        .put('[', 'х').put('{', 'х')
         .put('w', 'ц')
         .put('x', 'ч')
         .put('i', 'ш')
         .put('o', 'щ')
-        .put('}', 'ъ').put(']', 'ъ')
+        .put(']', 'ъ').put('}', 'ъ')
         .put('s', 'ы')
         .put('m', 'ь')
-        .put('"', 'э').put('\'', 'э')
-        .put('>', 'ю').put('.', 'ю')
+        .put('\'', 'э').put('"', 'э')
+        .put('.', 'ю').put('>', 'ю')
         .put('z', 'я')
         .build();
   }
@@ -161,13 +165,32 @@ final class Characters {
   }
 
   public static Function<String, String> switchLangFunction(final Lang destinationLang) {
+    switch (destinationLang) {
+    case RU:
+      return EnToRuSwitcher.FUNCTION;
+    case EN:
+      return RuToEnSwitcher.FUNCTION;
+    default:
+      throw new IllegalArgumentException();
+    }
+  }
 
-    return new Function<String, String>() {
-      @Override
-      public String apply(String input) {
-        return switchLang(input, destinationLang);
-      }
-    };
+  enum RuToEnSwitcher implements Function<String, String> {
+    FUNCTION;
+
+    @Override
+    public String apply(String input) {
+      return switchLang(input, Lang.EN);
+    }
+  }
+
+  enum EnToRuSwitcher implements Function<String, String> {
+    FUNCTION;
+
+    @Override
+    public String apply(String input) {
+      return switchLang(input, Lang.RU);
+    }
   }
 
   public static boolean isSeparator(char ch) {
@@ -214,6 +237,10 @@ final class Characters {
 
   public static boolean isRuOrPossibleSeparator(char ch) {
     return Chars.contains(RU_OR_POSSIBLE_SEPARATOR, ch);
+  }
+
+  public static boolean isPossibleRuInUppercase(char ch) {
+    return Chars.contains(POSSIBLE_RU_IN_UPPERCASE, ch);
   }
 
   /**
@@ -273,5 +300,53 @@ final class Characters {
       }
     }
     return false;
+  }
+
+  public static List<Integer> uppercasePositions(String str) {
+    List<Integer> uppercasePositions = Lists.newArrayListWithCapacity(str.length());
+    char[] chars = str.toCharArray();
+    for (int i = 0; i < chars.length; i++) {
+      if (Character.isUpperCase(chars[i]) || isPossibleRuInUppercase(chars[i])) {
+        uppercasePositions.add(i);
+      }
+    }
+    return ImmutableList.copyOf(uppercasePositions);
+  }
+
+  public static String restoreUppercase(String str, List<Integer> uppercasePositions) {
+    if (uppercasePositions.isEmpty()) {
+      return str;
+    }
+
+    StringBuilder s = new StringBuilder(str);
+
+    for (Integer i : uppercasePositions) {
+      char ch = s.charAt(i);
+      s.replace(i, i + 1, String.valueOf(Character.toUpperCase(ch)));
+    }
+
+    return s.toString();
+  }
+
+  public static boolean isAbbreviation(String str) {
+    if (str.length() < 3) {
+      return false;
+    }
+
+    char[] chars = str.toCharArray();
+    for (int i = 0; i < chars.length; i++) {
+      char ch = chars[i];
+      if (i % 2 == 0) {
+        if (!Character.isLetter(ch)) {
+          return false;
+        }
+      } else {
+        if (ch != '.') {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 }

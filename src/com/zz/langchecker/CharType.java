@@ -23,7 +23,8 @@ enum CharType {
   SEPARATOR_OR_POSSIBLE_RU(0b10),
   EN_OR_POSSIBLE_RU(0b100),
   RU_OR_POSSIBLE_EN(0b1000),
-  RU_OR_POSSIBLE_SEPARATOR(0b10000);
+  RU_OR_POSSIBLE_SEPARATOR(0b10000),
+  DIGIT(0b100000);
 
   private final int mask;
 
@@ -33,6 +34,10 @@ enum CharType {
 
   public static CharType of(char ch) {
     // XXX order is important: all about apostrophe
+    if (Character.isDigit(ch)) {
+      return DIGIT;
+    }
+
     if (Characters.isEnOrPossibleRu(ch)) {
       return EN_OR_POSSIBLE_RU;
     }
