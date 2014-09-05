@@ -109,6 +109,8 @@ public class LangSwitcherTokenizerTest {
 
     check(tokenizer.tokenize("вбрз")).hasToString("вбрз");
     check(tokenizer.tokenize("хбхб")).hasToString("хбхб");
+
+    check(tokenizer.tokenize("бр")).hasToString("бр");
   }
 
   @Test
@@ -117,5 +119,15 @@ public class LangSwitcherTokenizerTest {
 
     check(tokenizer.tokenize("T.G.I")).hasToString("T.G.I");
     check(tokenizer.tokenize("r.i.p.")).hasToString("r.i.p.");
+  }
+
+  @Test
+  public void correctedAppearsOnlyOnLangSwitch() {
+    LangSwitcherTokenizer tokenizer = LangSwitcherTokenizer.create();
+
+    check(tokenizer.tokenize("<>HJ").corrected()).isPresent();
+    check(tokenizer.tokenize("ьгыШс").corrected()).isPresent();
+    check(tokenizer.tokenize("tEst").corrected()).isAbsent();
+    check(tokenizer.tokenize("Слово").corrected()).isAbsent();
   }
 }

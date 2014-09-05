@@ -20,7 +20,6 @@ package com.zz.langchecker;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
 import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
@@ -46,8 +45,12 @@ public final class LangSwitcherTokenizer implements Tokenizer {
   final LangChecker langChecker;
   final Map<String, String> exceptions;
 
-  LangSwitcherTokenizer(LangChecker langChecker) {
+  final int minTokenLength;
+
+  LangSwitcherTokenizer(LangChecker langChecker, int minTokenLength) {
     this.langChecker = langChecker;
+
+    this.minTokenLength = minTokenLength;
 
     try {
       this.exceptions = Resources.readLines(
@@ -60,7 +63,11 @@ public final class LangSwitcherTokenizer implements Tokenizer {
   }
 
   public static LangSwitcherTokenizer create() {
-    return new LangSwitcherTokenizer(LangChecker.create());
+    return new LangSwitcherTokenizer(LangChecker.create(), 0);
+  }
+
+  public static LangSwitcherTokenizer create(int minTokenLength) {
+    return new LangSwitcherTokenizer(LangChecker.create(), minTokenLength);
   }
 
   @Override
@@ -79,7 +86,7 @@ public final class LangSwitcherTokenizer implements Tokenizer {
     return ImmutableTokenizerResponse.builder()
         .original(input)
         .addAllTokens(wordTokens)
-        .corrected(corrected.equals(canonical)
+        .corrected(canonical(corrected).equals(canonical)
             ? Optional.<String>absent()
             : Optional.of(corrected))
         .build();
@@ -87,7 +94,7 @@ public final class LangSwitcherTokenizer implements Tokenizer {
 
   List<Token> split(String input) {
     List<Token> tokens = Lists.newArrayList();
-    for (Token token : splitBySpecificSeparators(input, isSeparator(), true)) {
+    for (Token token : splitBySpecificSeparators(input, isSeparator(), false)) {
       tokens.addAll(splitPossibleSubTokens(token));
     }
     return ImmutableList.copyOf(tokens);
@@ -237,23 +244,30 @@ public final class LangSwitcherTokenizer implements Tokenizer {
       boolean useException) {
 
     return ImmutableToken.builder()
-        .type(tokenType)
+        // XXX assume that we use exceptions for words
+        .type(useException && exceptions.containsKey(canonical)
+            ? TokenType.WORD
+            : tokenType)
         .original(original)
         .canonical(canonical)
-        .corrected(useException
-            ? Objects.firstNonNull(exceptions.get(canonical), corrected)
-            : corrected)
+        .corrected(useException && exceptions.containsKey(canonical)
+            ? exceptions.get(canonical)
+            : canonical.length() < minTokenLength
+                ? canonical
+                : corrected)
         .charTypes(charTypes)
         .build();
   }
 
   private boolean checkAll(Iterable<Token> tokens, Lang lang) {
+    boolean atLeastOneWord = false;
     for (Token token : tokens) {
-      if (!langChecker.check(lang, token.corrected())) {
+      atLeastOneWord = token.isWord();
+      if (token.isWord() && !langChecker.check(lang, token.corrected())) {
         return false;
       }
     }
-    return true;
+    return atLeastOneWord;
   }
 
   private static final class ExceptionsLineProcessor implements LineProcessor<Map<String, String>> {

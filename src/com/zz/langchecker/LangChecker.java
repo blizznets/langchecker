@@ -57,9 +57,8 @@ final class LangChecker {
 
   public boolean check(Lang lang, String word) {
     int length = word.length();
-    // vocabulary with exceptions
 
-    if (!Characters.hasVowel(lang, word) && length >= 2) {
+    if (!Characters.hasVowel(lang, word)) {
       return false;
     }
 
