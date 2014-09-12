@@ -27,10 +27,10 @@ Vocabularies with 109582 english and 92453 russian words were used for tests.
 
 |                | EN        | RU        |                                                          |
 |----------------|-----------|-----------|----------------------------------------------------------|
-| positive       | 99.89%    | 99.94%    | amount of correct words, that were recognized as correct |
-| false negative |  0.11%    |  0.06%    | amount of correct words, thar were recognized as wrong   |
-| negative       | 92.97%    | 95.91%    | amount of wrong words, that were recognized as wrong     |
-| false positive |  7.03%    |  4.09%    | amount of wrong words, that were recognized as correct   |
+| positive       | 99.97%    | 99.99%    | amount of correct words, that were recognized as correct |
+| false negative |  0.03%    |  0.01%    | amount of correct words, thar were recognized as wrong   |
+| negative       | 98.26%    | 97.81%    | amount of wrong words, that were recognized as wrong     |
+| false positive |  1.74%    |  2.19%    | amount of wrong words, that were recognized as correct   |
 
 _correct words_ - words from vocabulary, _wrong words_ - words from vocabulary in wrong keyboard layout
 

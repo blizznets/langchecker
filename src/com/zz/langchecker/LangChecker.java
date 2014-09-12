@@ -31,14 +31,17 @@ import java.util.Set;
 final class LangChecker {
   final Map<Lang, Set<String>> nonexistent2gram;
   final Map<Lang, Set<String>> nonexistent3gram;
+  final Map<Lang, Set<String>> nonexistentFirst4gram;
   final Map<Lang, Set<String>> nonexistent4gram;
 
   public LangChecker(
       Map<Lang, Set<String>> nonexistent2gram,
       Map<Lang, Set<String>> nonexistent3gram,
+      Map<Lang, Set<String>> nonexistentFirst4gram,
       Map<Lang, Set<String>> nonexistent4gram) {
     this.nonexistent2gram = nonexistent2gram;
     this.nonexistent3gram = nonexistent3gram;
+    this.nonexistentFirst4gram = nonexistentFirst4gram;
     this.nonexistent4gram = nonexistent4gram;
   }
 
@@ -50,6 +53,9 @@ final class LangChecker {
         ImmutableMap.of(
             Lang.EN, readVocabulary("nonexistent3gram-en.txt"),
             Lang.RU, readVocabulary("nonexistent3gram-ru.txt")),
+        ImmutableMap.of(
+            Lang.EN, readVocabulary("nonexistentFirst4gram-en.txt"),
+            Lang.RU, readVocabulary("nonexistentFirst4gram-ru.txt")),
         ImmutableMap.of(
             Lang.EN, readVocabulary("nonexistent4gram-en.txt"),
             Lang.RU, readVocabulary("nonexistent4gram-ru.txt")));
@@ -65,6 +71,12 @@ final class LangChecker {
     if (length >= 6) {
       Optional<String> firstConsonant6gram = firstNgram(lang, word, 6, false);
       if (firstConsonant6gram.isPresent()) {
+        return false;
+      }
+    }
+
+    if (length >= 4) {
+      if (nonexistentFirst4gram.get(lang).contains(word.substring(0, 4))) {
         return false;
       }
     }
